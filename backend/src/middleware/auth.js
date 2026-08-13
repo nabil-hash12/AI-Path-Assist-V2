@@ -16,7 +16,6 @@ async function requireAuth(req, res, next) {
     const user = await users.findById(payload.sub);
     if (!user) return res.status(401).json({ error: "User no longer exists." });
     if (user.status === "Deactivated") return res.status(403).json({ error: "Account deactivated." });
-    if (user.status === "Pending") return res.status(403).json({ error: "Account is pending administrator approval." });
     req.user = user;
     next();
   } catch (err) {

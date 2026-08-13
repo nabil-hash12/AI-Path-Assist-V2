@@ -29,11 +29,6 @@ async function listAll() {
   return rows.map(toPublic);
 }
 
-/** Active admins — used to notify someone when a new registration needs approval. */
-async function listAdmins() {
-  return all("SELECT * FROM users WHERE role = $1 AND status = $2", ["admin", "Active"]);
-}
-
 async function create({ name, email, password, role, institution, status = "Active" }) {
   const id = uuid();
   const passwordHash = bcrypt.hashSync(password, 10);
@@ -78,7 +73,6 @@ module.exports = {
   findByEmail,
   findById,
   listAll,
-  listAdmins,
   create,
   verifyPassword,
   touchLogin,

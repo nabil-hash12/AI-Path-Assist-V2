@@ -25,7 +25,6 @@ export default function AdminControlPage() {
   const [inviteForm, setInviteForm] = useState({ name: "", email: "", password: "", role: "pathologist" as Role, institution: "" });
   const [inviteError, setInviteError] = useState("");
   const [inviting, setInviting] = useState(false);
-  const [decidingId, setDecidingId] = useState<string | null>(null);
 
   const loadUsers = async () => {
     try {
@@ -70,33 +69,6 @@ export default function AdminControlPage() {
     }
   };
 
-  const approveUser = async (u: SystemUser) => {
-    setDecidingId(u.id);
-    try {
-      const res = await api.post<{ user: SystemUser }>(`/api/users/${u.id}/approve`, {});
-      setUsers((prev) => prev.map((x) => (x.id === u.id ? res.user : x)));
-      loadAudit();
-    } catch {
-      // no-op
-    } finally {
-      setDecidingId(null);
-    }
-  };
-
-  const rejectUser = async (u: SystemUser) => {
-    if (!confirm(`Reject the registration request from ${u.name} (${u.email})?`)) return;
-    setDecidingId(u.id);
-    try {
-      const res = await api.post<{ user: SystemUser }>(`/api/users/${u.id}/reject`, {});
-      setUsers((prev) => prev.map((x) => (x.id === u.id ? res.user : x)));
-      loadAudit();
-    } catch {
-      // no-op
-    } finally {
-      setDecidingId(null);
-    }
-  };
-
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteForm.name || !inviteForm.email || !inviteForm.password) {
@@ -127,7 +99,6 @@ export default function AdminControlPage() {
             <MetricCard label="Total Users" value={users.length} icon="group" footnote={`Across ${new Set(users.map((u) => u.role)).size} roles`} tone="primary" />
             <MetricCard label="Active Users" value={users.filter((u) => u.status === "Active").length} icon="wifi_tethering" footnote="Currently enabled" tone="secondary" />
             <MetricCard label="Pending Invites" value={users.filter((u) => u.status === "Invited").length} icon="mail" footnote="Awaiting first login" tone="neutral" />
-            <MetricCard label="Pending Approval" value={users.filter((u) => u.status === "Pending").length} icon="hourglass_top" footnote="Self-registered, needs review" tone="neutral" />
             <MetricCard label="AI Engine" value="v1.0" icon="verified_user" footnote="Heuristic CV pipeline" tone="secondary" />
           </div>
 
@@ -194,50 +165,21 @@ export default function AdminControlPage() {
                           </select>
                         </td>
                         <td className="p-md">
-                          <span className={`text-xs font-data-mono px-2 py-1 rounded ${
-                            u.status === "Active"
-                              ? "text-secondary bg-secondary/10"
-                              : u.status === "Pending"
-                              ? "text-amber-600 bg-amber-500/10"
-                              : "text-on-surface-variant bg-surface-variant"
-                          }`}>
+                          <span className={`text-xs font-data-mono px-2 py-1 rounded ${u.status === "Active" ? "text-secondary bg-secondary/10" : "text-on-surface-variant bg-surface-variant"}`}>
                             {u.status}
                           </span>
                         </td>
                         <td className="p-md text-on-surface-variant font-data-mono text-sm">{u.lastLogin ?? "Never"}</td>
                         <td className="p-md text-center">
-                          {u.status === "Pending" ? (
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                onClick={() => approveUser(u)}
-                                disabled={decidingId === u.id}
-                                className="flex items-center gap-1 text-xs text-secondary hover:text-secondary-fixed transition-colors disabled:opacity-50"
-                                title="Approve registration"
-                              >
-                                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>check_circle</span>
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => rejectUser(u)}
-                                disabled={decidingId === u.id}
-                                className="flex items-center gap-1 text-xs text-error hover:text-error transition-colors disabled:opacity-50"
-                                title="Reject registration"
-                              >
-                                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>cancel</span>
-                                Reject
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => toggleStatus(u)}
-                              className="text-on-surface-variant hover:text-error transition-colors"
-                              title={u.status === "Deactivated" ? "Reactivate" : "Deactivate"}
-                            >
-                              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                                {u.status === "Deactivated" ? "person_check" : "person_remove"}
-                              </span>
-                            </button>
-                          )}
+                          <button
+                            onClick={() => toggleStatus(u)}
+                            className="text-on-surface-variant hover:text-error transition-colors"
+                            title={u.status === "Deactivated" ? "Reactivate" : "Deactivate"}
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                              {u.status === "Deactivated" ? "person_check" : "person_remove"}
+                            </span>
+                          </button>
                         </td>
                       </tr>
                     ))}

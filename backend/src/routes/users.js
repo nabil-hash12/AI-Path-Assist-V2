@@ -2,7 +2,6 @@ const express = require("express");
 const users = require("../models/users");
 const misc = require("../models/misc");
 const { requireAuth, requireRole } = require("../middleware/auth");
-const { sendAccountApprovedEmail, sendAccountRejectedEmail } = require("../lib/otp");
 
 const router = express.Router();
 
@@ -34,54 +33,12 @@ router.patch("/:id/role", requireAuth, requireRole("admin"), async (req, res) =>
 
 router.patch("/:id/status", requireAuth, requireRole("admin"), async (req, res) => {
   const { status } = req.body || {};
-  if (!["Active", "Invited", "Deactivated", "Pending"].includes(status)) {
+  if (!["Active", "Invited", "Deactivated"].includes(status)) {
     return res.status(400).json({ error: "Invalid status." });
   }
   const updated = await users.updateStatus(req.params.id, status);
   if (!updated) return res.status(404).json({ error: "User not found." });
   await misc.logAction({ actorId: req.user.id, actorName: req.user.name, action: `Set status to ${status}`, target: updated.email });
-  res.json({ user: users.toPublic(updated) });
-});
-
-// ─── Approve a pending self-registration ───────────────────────────────────
-router.post("/:id/approve", requireAuth, requireRole("admin"), async (req, res) => {
-  const target = await users.findById(req.params.id);
-  if (!target) return res.status(404).json({ error: "User not found." });
-  if (target.status !== "Pending") {
-    return res.status(400).json({ error: "Only pending accounts can be approved." });
-  }
-
-  const updated = await users.updateStatus(target.id, "Active");
-  await misc.logAction({ actorId: req.user.id, actorName: req.user.name, action: "Approved registration", target: updated.email });
-
-  try {
-    await sendAccountApprovedEmail(updated.email, updated.name);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn("[Users] Failed to send approval email:", err.message);
-  }
-
-  res.json({ user: users.toPublic(updated) });
-});
-
-// ─── Reject a pending self-registration ────────────────────────────────────
-router.post("/:id/reject", requireAuth, requireRole("admin"), async (req, res) => {
-  const target = await users.findById(req.params.id);
-  if (!target) return res.status(404).json({ error: "User not found." });
-  if (target.status !== "Pending") {
-    return res.status(400).json({ error: "Only pending accounts can be rejected." });
-  }
-
-  const updated = await users.updateStatus(target.id, "Deactivated");
-  await misc.logAction({ actorId: req.user.id, actorName: req.user.name, action: "Rejected registration", target: updated.email });
-
-  try {
-    await sendAccountRejectedEmail(updated.email, updated.name);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn("[Users] Failed to send rejection email:", err.message);
-  }
-
   res.json({ user: users.toPublic(updated) });
 });
 

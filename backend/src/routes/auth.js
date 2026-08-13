@@ -11,7 +11,6 @@ const {
   storePasswordResetOTP,
   verifyPasswordResetOTP,
   sendPasswordResetEmail,
-  sendAdminApprovalRequestEmail,
 } = require("../lib/otp");
 
 const router = express.Router();
@@ -29,11 +28,6 @@ router.post("/login", async (req, res) => {
   }
   if (user.status === "Deactivated") {
     return res.status(403).json({ error: "This account has been deactivated. Contact your administrator." });
-  }
-  if (user.status === "Pending") {
-    return res.status(403).json({
-      error: "Your account is awaiting administrator approval. You'll receive an email once it's approved.",
-    });
   }
 
   const code = generateOTP();
@@ -68,8 +62,7 @@ router.post("/login", async (req, res) => {
   });
 });
 
-// ─── Step 2: verify OTP → issue full JWT (or, for a still-Pending self-
-// registration, confirm the email and notify admins instead of logging in) ─
+// ─── Step 2: verify OTP → issue full JWT ──────────────────────────────────
 router.post("/verify-otp", async (req, res) => {
   const { email, otp } = req.body || {};
   if (!email || !otp) return res.status(400).json({ error: "email and otp are required." });
@@ -85,32 +78,6 @@ router.post("/verify-otp", async (req, res) => {
 
   const user = await users.findByEmail(email);
   if (!user) return res.status(401).json({ error: "User not found." });
-
-  // Self-registered accounts sit in "Pending" until an admin approves them.
-  // Verifying the OTP here just confirms the email address is real — it
-  // does not grant a session. Notify admins so they can review the request.
-  if (user.status === "Pending") {
-    await misc.logAction({ actorId: user.id, actorName: user.name, action: "Verified email (awaiting admin approval)", target: "Auth" });
-
-    try {
-      const admins = await users.listAdmins();
-      await sendAdminApprovalRequestEmail(
-        admins.map((a) => a.email),
-        { name: user.name, email: user.email, role: user.role, institution: user.institution }
-      );
-    } catch (err) {
-      // Don't fail the user's flow if the admin-notification email can't be
-      // sent (e.g. email not configured in dev) — just log it.
-      // eslint-disable-next-line no-console
-      console.warn("[Registration] Failed to notify admins of pending approval:", err.message);
-    }
-
-    return res.json({
-      pending: true,
-      approvalPending: true,
-      message: "Email verified. Your account is now awaiting administrator approval. You'll receive an email once it's approved.",
-    });
-  }
 
   await users.touchLogin(user.id);
   await misc.logAction({ actorId: user.id, actorName: user.name, action: "Logged in (2FA verified)", target: "Auth" });
@@ -164,12 +131,11 @@ router.post("/register", async (req, res) => {
   if (await users.findByEmail(email)) {
     return res.status(409).json({ error: "An account with this email already exists." });
   }
-  const user = await users.create({ name, email, password, role, institution, status: "Pending" });
-  await misc.logAction({ actorId: user.id, actorName: user.name, action: "Registered new account (pending approval)", target: user.email });
+  const user = await users.create({ name, email, password, role, institution });
+  await misc.logAction({ actorId: user.id, actorName: user.name, action: "Registered new account", target: user.email });
 
-  // After registration, verify the email address via a one-time code before
-  // the account is even visible to admins for approval. The account remains
-  // "Pending" — and cannot sign in — until an administrator approves it.
+  // After registration, trigger the 2FA flow rather than issuing a JWT
+  // immediately — this ensures even newly registered accounts verify email.
   const code = generateOTP();
   await storeOTP(email, code);
 
@@ -202,7 +168,7 @@ router.post("/forgot-password", async (req, res) => {
   // exists, so this endpoint can't be used to enumerate registered emails.
   const genericResponse = {
     pending: true,
-    message: `If an account exists for ${email}, a password reset code has been sent.`,
+    message: `${email}, a password reset code has been sent.`,
   };
 
   if (!user) return res.json(genericResponse);

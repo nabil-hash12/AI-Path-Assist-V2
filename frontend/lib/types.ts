@@ -83,7 +83,7 @@ export interface SystemUser {
   name: string;
   email: string;
   role: Role;
-  status: "Active" | "Invited" | "Deactivated" | "Pending";
+  status: "Active" | "Invited" | "Deactivated";
   lastLogin: string;
 }
 

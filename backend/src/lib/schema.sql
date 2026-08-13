@@ -8,19 +8,10 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin', 'pathologist', 'lab_tech', 'researcher')),
   institution TEXT NOT NULL DEFAULT 'General Hospital Pathology Dept',
-  status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Invited', 'Deactivated', 'Pending')),
+  status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Invited', 'Deactivated')),
   last_login TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
--- Widen the status CHECK constraint to include 'Pending' on databases that
--- were created before self-registration required admin approval. Safe to
--- re-run: drops and recreates the (default-named) constraint idempotently.
-DO $$
-BEGIN
-  ALTER TABLE users DROP CONSTRAINT IF EXISTS users_status_check;
-  ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('Active', 'Invited', 'Deactivated', 'Pending'));
-END $$;
 
 CREATE TABLE IF NOT EXISTS patient_cases (
   id TEXT PRIMARY KEY,
