@@ -35,7 +35,14 @@ router.post("/:caseId/generate", requireAuth, requireRole("admin", "pathologist"
   const caseRow = await casesModel.findRawByCaseCode(req.params.caseId);
   if (!caseRow) return res.status(404).json({ error: "Case not found." });
   const caseData = await casesModel.findByCaseCode(req.params.caseId);
-  const analysis = await analysisModel.findLatestForCase(caseRow.id);
+  // Report the analysis the pathologist actually had open in the viewer
+  // (what the "Generate Report" modal previewed), not just whichever
+  // analysis happens to be newest for the case. Falls back to the latest
+  // when no specific analysis was selected (e.g. a case with only one).
+  const { analysisId } = req.body || {};
+  const analysis = analysisId
+    ? (await analysisModel.findByIdForCase(analysisId, caseRow.id)) || (await analysisModel.findLatestForCase(caseRow.id))
+    : await analysisModel.findLatestForCase(caseRow.id);
 
   const reportCode = await misc.nextReportCode();
   const fileName = `${reportCode}.pdf`;

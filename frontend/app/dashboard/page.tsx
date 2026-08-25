@@ -9,7 +9,8 @@ import MetricCard from "@/components/MetricCard";
 import StatusChip from "@/components/StatusChip";
 import { usePatients } from "@/lib/patients-context";
 import { api } from "@/lib/api";
-import { ActivityItem } from "@/lib/types";
+import { ActivityItem, AnalysisResult } from "@/lib/types";
+import { buildCSV, downloadCSV, exportTimestamp, summarizeMetrics } from "@/lib/csv";
 
 interface Stats {
   activeCases: number;
@@ -23,15 +24,74 @@ export default function DashboardPage() {
   const { patients } = usePatients();
   const [stats, setStats] = useState<Stats | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     api.get<Stats>("/api/dashboard/stats").then(setStats).catch(() => {});
     api.get<{ activity: ActivityItem[] }>("/api/dashboard/activity").then((r) => setActivity(r.activity)).catch(() => {});
   }, []);
 
+  // Export every visible patient case, joined with each patient's latest
+  // AI analysis, as a single CSV file.
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const analyses = await Promise.all(
+        patients.map((c) =>
+          api
+            .get<{ analysis: AnalysisResult }>(`/api/cases/${c.id}/analysis`)
+            .then((res) => res.analysis)
+            .catch(() => null)
+        )
+      );
+
+      const headers = [
+        "Patient ID",
+        "Patient Name",
+        "Age",
+        "Gender",
+        "Specimen Type",
+        "Assigned Pathologist",
+        "Status",
+        "Diagnosis Status",
+        "Upload Status",
+        "Date Added",
+        "AI Engine Version",
+        "AI Analysis Date",
+        "AI Analysis Summary",
+        "Detected Biomarkers",
+      ];
+
+      const rows = patients.map((c, i) => {
+        const a = analyses[i];
+        return [
+          c.patientId,
+          c.patientName,
+          c.age,
+          c.gender,
+          c.specimenType,
+          c.assignedTo ?? "Unassigned",
+          c.status,
+          c.diagnosisStatus,
+          c.uploadStatus,
+          c.dateAdded,
+          a?.engineVersion ?? "",
+          a?.createdAt ?? "",
+          summarizeMetrics(a?.metrics),
+          a?.tags?.join("; ") ?? "",
+        ];
+      });
+
+      downloadCSV(`clinical-overview_${exportTimestamp()}.csv`, buildCSV(headers, rows));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <AppShell allow={["admin", "pathologist", "researcher"]}>
-      <TopBar title="Clinical Overview" />
+      <TopBar title="Clinical Overview" onExport={handleExport} exporting={exporting} />
       <main className="flex-grow p-xl overflow-y-auto">
         <div className="max-w-[1400px] mx-auto flex flex-col gap-lg">
           <div className="flex items-center justify-between">

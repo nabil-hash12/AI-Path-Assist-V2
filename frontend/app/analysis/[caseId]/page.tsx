@@ -19,7 +19,11 @@ export default function AnalysisViewerPage() {
   const caseId = params.caseId;
   const specimen = getById(caseId);
 
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  // Every analysis run against this patient (one per analyzed slide), most
+  // recent first — the selector strip lets the user browse all of them.
+  const [analyses, setAnalyses] = useState<AnalysisResult[]>([]);
+  const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
+  const analysis = analyses.find((a) => a.id === selectedAnalysisId) ?? analyses[0] ?? null;
   const [analysisState, setAnalysisState] = useState<"loading" | "ready" | "processing" | "empty" | "error">("loading");
   const [activeJob, setActiveJob] = useState<QueueJob | null>(null);
   const { joinCase, leaveCase, onJobProgress, onJobDone, onAnalysisReady } = useSocket();
@@ -31,15 +35,22 @@ export default function AnalysisViewerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
-  // Load analysis result — once on mount and whenever Socket.IO tells us
-  // a new result is ready.
-  const loadAnalysis = async () => {
+  // Load every analysis result for this patient — once on mount and
+  // whenever Socket.IO tells us a new result is ready.
+  const loadAnalyses = async () => {
     try {
-      const res = await api.get<{ analysis: AnalysisResult }>(`/api/cases/${caseId}/analysis`);
-      setAnalysis(res.analysis);
-      setAnalysisState("ready");
-      setActiveJob(null);
-      fetchById(caseId);
+      const res = await api.get<{ analyses: AnalysisResult[] }>(`/api/cases/${caseId}/analyses`);
+      setAnalyses(res.analyses);
+      if (res.analyses.length > 0) {
+        // Keep the current selection if it still exists; otherwise default
+        // to the most recent analysis.
+        setSelectedAnalysisId((prev) => (prev && res.analyses.some((a) => a.id === prev) ? prev : res.analyses[0].id));
+        setAnalysisState("ready");
+        setActiveJob(null);
+        fetchById(caseId);
+        return;
+      }
+      throw new Error("no analyses yet");
     } catch {
       // No result yet — check queue for an active job.
       try {
@@ -58,7 +69,7 @@ export default function AnalysisViewerPage() {
   };
 
   useEffect(() => {
-    loadAnalysis();
+    loadAnalyses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
@@ -72,7 +83,8 @@ export default function AnalysisViewerPage() {
     return off;
   }, [caseId, onJobProgress]);
 
-  // Real-time: job finished — load the result immediately.
+  // Real-time: job finished — reload the full list immediately. New results
+  // are appended, not replaced, so earlier analyses stay browsable.
   useEffect(() => {
     const off = onJobDone((e) => {
       if (e.caseId !== caseId) return;
@@ -80,7 +92,7 @@ export default function AnalysisViewerPage() {
         setAnalysisState("error");
         setActiveJob(null);
       } else {
-        loadAnalysis();
+        loadAnalyses().then(() => setSelectedAnalysisId(null));
       }
     });
     return off;
@@ -90,7 +102,7 @@ export default function AnalysisViewerPage() {
   useEffect(() => {
     const off = onAnalysisReady((e) => {
       if (e.caseId !== caseId) return;
-      loadAnalysis();
+      loadAnalyses().then(() => setSelectedAnalysisId(null));
     });
     return off;
   }, [caseId, onAnalysisReady]);
@@ -148,7 +160,9 @@ export default function AnalysisViewerPage() {
     setReportError("");
     setGenerating(true);
     try {
-      const res = await api.post<{ report: { id: string; downloadUrl: string } }>(`/api/reports/${caseId}/generate`);
+      const res = await api.post<{ report: { id: string; downloadUrl: string } }>(`/api/reports/${caseId}/generate`, {
+        analysisId: analysis?.id,
+      });
       setReportUrl(fileUrl(res.report.downloadUrl) || "");
       setReportGenerated(true);
     } catch (err) {
@@ -191,6 +205,46 @@ export default function AnalysisViewerPage() {
             </button>
           </div>
         </header>
+
+        {analyses.length > 1 && (
+          <div className="flex-shrink-0 bg-surface-container-lowest border-b border-outline-variant px-margin py-sm">
+            <p className="font-label-caps text-on-surface-variant uppercase tracking-wider mb-xs">
+              {analyses.length} Analyses for this Patient
+            </p>
+            <div className="flex items-center gap-sm overflow-x-auto pb-1">
+              {analyses.map((a) => {
+                const isSelected = a.id === analysis?.id;
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => setSelectedAnalysisId(a.id)}
+                    title={a.fileName || a.id}
+                    className={`flex-shrink-0 flex items-center gap-sm rounded-DEFAULT border p-xs pr-sm transition-colors ${
+                      isSelected
+                        ? "border-primary bg-primary/10"
+                        : "border-outline-variant bg-surface-container hover:bg-surface-container-high"
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded overflow-hidden bg-surface-container-highest flex-shrink-0 flex items-center justify-center">
+                      {a.thumbnailUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={fileUrl(a.thumbnailUrl)} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 18 }}>image</span>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-start">
+                      <span className={`font-data-mono text-xs ${isSelected ? "text-primary" : "text-on-surface"} max-w-[140px] truncate`}>
+                        {a.fileName || `Slide ${a.imageId.slice(0, 8)}`}
+                      </span>
+                      <span className="text-on-surface-variant text-[11px]">{new Date(a.createdAt).toLocaleString()}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <main className="flex-grow flex overflow-hidden relative">
           {/* Slide viewer canvas */}

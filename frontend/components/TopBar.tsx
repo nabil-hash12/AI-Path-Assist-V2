@@ -7,11 +7,13 @@ export default function TopBar({
   showSearch = true,
   showExport = true,
   onExport,
+  exporting = false,
 }: {
   title: string;
   showSearch?: boolean;
   showExport?: boolean;
   onExport?: () => void;
+  exporting?: boolean;
 }) {
   const { user } = useAuth();
   const initials = (user?.name ?? "U")
@@ -50,12 +52,14 @@ export default function TopBar({
         {showExport && (
           <button
             onClick={onExport}
-            className="bg-primary text-on-primary px-md py-xs rounded-DEFAULT font-body-md font-medium hover:opacity-90 transition-opacity flex items-center gap-xs"
+            disabled={exporting}
+            title="Export patient &amp; AI analysis data as CSV"
+            className="bg-primary text-on-primary px-md py-xs rounded-DEFAULT font-body-md font-medium hover:opacity-90 transition-opacity flex items-center gap-xs disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-              download
+            <span className={`material-symbols-outlined ${exporting ? "animate-spin" : ""}`} style={{ fontSize: 18 }}>
+              {exporting ? "progress_activity" : "download"}
             </span>
-            Export
+            {exporting ? "Exporting…" : "Export"}
           </button>
         )}
         <div className="w-9 h-9 rounded-full bg-surface-container-highest border border-outline-variant overflow-hidden flex items-center justify-center text-xs font-bold text-primary">

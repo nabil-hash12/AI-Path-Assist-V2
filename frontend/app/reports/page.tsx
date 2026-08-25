@@ -5,6 +5,8 @@ import AppShell from "@/components/AppShell";
 import TopBar from "@/components/TopBar";
 import Footer from "@/components/Footer";
 import { api, fileUrl } from "@/lib/api";
+import { AnalysisResult } from "@/lib/types";
+import { buildCSV, downloadCSV, exportTimestamp, summarizeMetrics } from "@/lib/csv";
 
 interface ReportRow {
   id: string;
@@ -18,6 +20,7 @@ interface ReportRow {
 export default function ReportsPage() {
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     api
@@ -26,9 +29,59 @@ export default function ReportsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Export the signed reports list, joined with each case's latest AI
+  // analysis, as a single CSV file.
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const analyses = await Promise.all(
+        reports.map((r) =>
+          api
+            .get<{ analysis: AnalysisResult }>(`/api/cases/${r.caseId}/analysis`)
+            .then((res) => res.analysis)
+            .catch(() => null)
+        )
+      );
+
+      const headers = [
+        "Report ID",
+        "Case ID",
+        "Patient ID",
+        "Signed By",
+        "Date",
+        "Diagnosis Status",
+        "AI Engine Version",
+        "AI Analysis Date",
+        "AI Analysis Summary",
+        "Detected Biomarkers",
+      ];
+
+      const rows = reports.map((r, i) => {
+        const a = analyses[i];
+        return [
+          r.id,
+          r.caseId,
+          r.patientId,
+          r.signedBy,
+          r.date,
+          r.status,
+          a?.engineVersion ?? "",
+          a?.createdAt ?? "",
+          summarizeMetrics(a?.metrics),
+          a?.tags?.join("; ") ?? "",
+        ];
+      });
+
+      downloadCSV(`diagnostic-reports_${exportTimestamp()}.csv`, buildCSV(headers, rows));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <AppShell allow={["admin", "pathologist"]}>
-      <TopBar title="Diagnostic Reports" showSearch={false} />
+      <TopBar title="Diagnostic Reports" showSearch={false} onExport={handleExport} exporting={exporting} />
       <main className="flex-grow p-xl overflow-y-auto">
         <div className="max-w-[1200px] mx-auto flex flex-col gap-lg">
           <p className="text-on-surface-variant">Signed reports generated from the AI inference viewer.</p>

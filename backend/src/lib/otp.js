@@ -139,6 +139,19 @@ async function sendPasswordResetEmail(toEmail, code) {
   });
 }
 
+/** Generic transactional email sender, reused by feature-specific notification templates. */
+async function sendEmail({ to, subject, text, html }) {
+  const t = getTransporter();
+  if (!t) {
+    throw new Error(
+      "Email is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to backend/.env."
+    );
+  }
+  const fromName = process.env.OTP_FROM_NAME || "AI-Path Assist";
+  const from = `"${fromName}" <${process.env.GMAIL_USER}>`;
+  await t.sendMail({ from, to, subject, text, html });
+}
+
 /** Send the OTP to the user's registered email address via Gmail. */
 async function sendOTPEmail(toEmail, code) {
   const t = getTransporter();
@@ -195,6 +208,168 @@ async function sendOTPEmail(toEmail, code) {
   });
 }
 
+// ─── Admin approval workflow emails ────────────────────────────────────────
+
+/**
+ * Notify admins that a newly self-registered account (email already
+ * verified) is waiting for approval before it can sign in.
+ */
+async function sendAdminApprovalRequestEmail(adminEmails, applicant) {
+  const t = getTransporter();
+  if (!t) {
+    throw new Error(
+      "Email is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to backend/.env."
+    );
+  }
+  if (!adminEmails || adminEmails.length === 0) return;
+
+  const fromName = process.env.OTP_FROM_NAME || "AI-Path Assist";
+  const from = `"${fromName}" <${process.env.GMAIL_USER}>`;
+  const appUrl = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
+
+  await t.sendMail({
+    from,
+    to: adminEmails.join(","),
+    subject: `Action required — approve new account: ${applicant.email}`,
+    text: [
+      `A new user has registered and verified their email. Their account is on hold until an administrator approves it.`,
+      ``,
+      `Name: ${applicant.name}`,
+      `Email: ${applicant.email}`,
+      `Requested role: ${applicant.role}`,
+      `Institution: ${applicant.institution}`,
+      ``,
+      `Review and approve or reject this request from Admin Control → User Management:`,
+      `${appUrl}/admin`,
+      ``,
+      `— AI-Path Assist Security`,
+    ].join("\n"),
+    html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:system-ui,sans-serif;background:#f5f5f5;margin:0;padding:24px">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+    <div style="background:#1a2b4c;padding:24px 32px">
+      <p style="margin:0;color:#9ecfff;font-size:12px;letter-spacing:1px;text-transform:uppercase">AI-Path Assist</p>
+      <h1 style="margin:8px 0 0;color:#fff;font-size:20px;font-weight:600">New Account Awaiting Approval</h1>
+    </div>
+    <div style="padding:32px">
+      <p style="margin:0 0 20px;color:#444;font-size:15px">A new user has verified their email and is requesting access:</p>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+        <tr><td style="padding:6px 0;color:#999;font-size:13px;width:120px">Name</td><td style="padding:6px 0;color:#222;font-size:14px">${applicant.name}</td></tr>
+        <tr><td style="padding:6px 0;color:#999;font-size:13px">Email</td><td style="padding:6px 0;color:#222;font-size:14px">${applicant.email}</td></tr>
+        <tr><td style="padding:6px 0;color:#999;font-size:13px">Role</td><td style="padding:6px 0;color:#222;font-size:14px">${applicant.role}</td></tr>
+        <tr><td style="padding:6px 0;color:#999;font-size:13px">Institution</td><td style="padding:6px 0;color:#222;font-size:14px">${applicant.institution}</td></tr>
+      </table>
+      <a href="${appUrl}/admin" style="display:inline-block;background:#1a2b4c;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600">Review in Admin Control</a>
+      <p style="margin:20px 0 0;color:#999;font-size:12px">This account cannot sign in until an administrator approves it.</p>
+    </div>
+    <div style="background:#f9f9f9;padding:16px 32px;border-top:1px solid #eee">
+      <p style="margin:0;color:#bbb;font-size:11px">AI-Path Assist — Clinical Pathology Intelligence Platform</p>
+    </div>
+  </div>
+</body>
+</html>`,
+  });
+}
+
+/** Tell a user their account has been approved and they can now sign in. */
+async function sendAccountApprovedEmail(toEmail, name) {
+  const t = getTransporter();
+  if (!t) {
+    throw new Error(
+      "Email is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to backend/.env."
+    );
+  }
+
+  const fromName = process.env.OTP_FROM_NAME || "AI-Path Assist";
+  const from = `"${fromName}" <${process.env.GMAIL_USER}>`;
+  const appUrl = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
+
+  await t.sendMail({
+    from,
+    to: toEmail,
+    subject: `You're approved — welcome to AI-Path Assist`,
+    text: [
+      `Hi ${name},`,
+      ``,
+      `Your AI-Path Assist account has been approved by an administrator. You can now sign in with your email and password.`,
+      ``,
+      `Sign in: ${appUrl}/login`,
+      ``,
+      `— AI-Path Assist Security`,
+    ].join("\n"),
+    html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:system-ui,sans-serif;background:#f5f5f5;margin:0;padding:24px">
+  <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+    <div style="background:#1a2b4c;padding:24px 32px">
+      <p style="margin:0;color:#9ecfff;font-size:12px;letter-spacing:1px;text-transform:uppercase">AI-Path Assist</p>
+      <h1 style="margin:8px 0 0;color:#fff;font-size:20px;font-weight:600">Account Approved</h1>
+    </div>
+    <div style="padding:32px">
+      <p style="margin:0 0 20px;color:#444;font-size:15px">Hi ${name}, your account has been approved by an administrator. You can now sign in.</p>
+      <a href="${appUrl}/login" style="display:inline-block;background:#1a2b4c;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600">Sign In</a>
+    </div>
+    <div style="background:#f9f9f9;padding:16px 32px;border-top:1px solid #eee">
+      <p style="margin:0;color:#bbb;font-size:11px">AI-Path Assist — Clinical Pathology Intelligence Platform</p>
+    </div>
+  </div>
+</body>
+</html>`,
+  });
+}
+
+/** Tell a user their account request was declined. */
+async function sendAccountRejectedEmail(toEmail, name) {
+  const t = getTransporter();
+  if (!t) {
+    throw new Error(
+      "Email is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to backend/.env."
+    );
+  }
+
+  const fromName = process.env.OTP_FROM_NAME || "AI-Path Assist";
+  const from = `"${fromName}" <${process.env.GMAIL_USER}>`;
+
+  await t.sendMail({
+    from,
+    to: toEmail,
+    subject: `Your AI-Path Assist account request`,
+    text: [
+      `Hi ${name},`,
+      ``,
+      `An administrator has reviewed your AI-Path Assist registration request and it was not approved.`,
+      `If you believe this is a mistake, please contact your institution's administrator.`,
+      ``,
+      `— AI-Path Assist Security`,
+    ].join("\n"),
+    html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:system-ui,sans-serif;background:#f5f5f5;margin:0;padding:24px">
+  <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+    <div style="background:#1a2b4c;padding:24px 32px">
+      <p style="margin:0;color:#9ecfff;font-size:12px;letter-spacing:1px;text-transform:uppercase">AI-Path Assist</p>
+      <h1 style="margin:8px 0 0;color:#fff;font-size:20px;font-weight:600">Account Request Update</h1>
+    </div>
+    <div style="padding:32px">
+      <p style="margin:0 0 12px;color:#444;font-size:15px">Hi ${name}, an administrator reviewed your registration request and it was not approved.</p>
+      <p style="margin:0;color:#999;font-size:12px">If you believe this is a mistake, please contact your institution's administrator.</p>
+    </div>
+    <div style="background:#f9f9f9;padding:16px 32px;border-top:1px solid #eee">
+      <p style="margin:0;color:#bbb;font-size:11px">AI-Path Assist — Clinical Pathology Intelligence Platform</p>
+    </div>
+  </div>
+</body>
+</html>`,
+  });
+}
+
 module.exports = {
   generateOTP,
   storeOTP,
@@ -203,4 +378,8 @@ module.exports = {
   storePasswordResetOTP,
   verifyPasswordResetOTP,
   sendPasswordResetEmail,
+  sendAdminApprovalRequestEmail,
+  sendAccountApprovedEmail,
+  sendAccountRejectedEmail,
+  sendEmail,
 };

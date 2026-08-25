@@ -67,6 +67,27 @@ async function listAll({ assignedToId } = {}) {
   return Promise.all(rows.map(serialize));
 }
 
+/**
+ * Cases whose date_added falls within any of the given [startDate, endDate]
+ * (YYYY-MM-DD, inclusive) windows. Used to scope researcher visibility to
+ * their admin-approved queue-access date ranges — an empty `ranges` array
+ * returns no cases at all rather than falling back to "everything".
+ */
+async function listByDateRanges(ranges) {
+  if (!ranges || ranges.length === 0) return [];
+  const clauses = [];
+  const params = [];
+  ranges.forEach(({ startDate, endDate }) => {
+    params.push(`${startDate}T00:00:00.000Z`, `${endDate}T23:59:59.999Z`);
+    clauses.push(`(date_added >= $${params.length - 1} AND date_added <= $${params.length})`);
+  });
+  const rows = await all(
+    `SELECT * FROM patient_cases WHERE ${clauses.join(" OR ")} ORDER BY date_added DESC`,
+    params
+  );
+  return Promise.all(rows.map(serialize));
+}
+
 async function create({ patientId, patientName, age, gender, specimenType, assignedTo, createdById }) {
   const id = uuid();
   const caseCode = await nextCaseCode();
@@ -156,6 +177,7 @@ module.exports = {
   findRawByCaseCode,
   findRawById,
   listAll,
+  listByDateRanges,
   create,
   updateBasicInfo,
   updateCaseRecord,

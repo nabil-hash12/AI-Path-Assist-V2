@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/analysis", label: "Queue", icon: "smb_share", roles: ["admin", "pathologist", "researcher"] },
   { href: "/queue", label: "Analysis", icon: "view_list", roles: ["admin", "pathologist", "lab_tech"] },
   { href: "/patients", label: "Patient Registry", icon: "groups", roles: ["admin", "pathologist", "lab_tech"] },
+  { href: "/queue-access", label: "Queue Access", icon: "lock_clock", roles: ["researcher"] },
   { href: "/reports", label: "Reports", icon: "description", roles: ["admin", "pathologist"] },
   { href: "/admin", label: "Admin Control", icon: "admin_panel_settings", roles: ["admin"] },
 ];

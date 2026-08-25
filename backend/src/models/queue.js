@@ -77,6 +77,17 @@ async function history(limit = 20) {
   );
 }
 
+/** All queue jobs created within an inclusive [startDate, endDate] window (YYYY-MM-DD). Used for the researcher queue-access review, so it includes every status, not just active/done/failed. */
+async function forDateRange(startDate, endDate) {
+  const rangeStart = `${startDate}T00:00:00.000Z`;
+  const rangeEnd = `${endDate}T23:59:59.999Z`;
+  const rows = await all(
+    "SELECT * FROM queue_jobs WHERE created_at >= $1 AND created_at <= $2 ORDER BY created_at DESC",
+    [rangeStart, rangeEnd]
+  );
+  return Promise.all(rows.map(serialize));
+}
+
 function relativeTime(ts) {
   const then = new Date(ts).getTime();
   const diffMs = Date.now() - then;
@@ -94,6 +105,7 @@ module.exports = {
   setBullJobId,
   active,
   history,
+  forDateRange,
   serialize,
   get: (id) => get("SELECT * FROM queue_jobs WHERE id = $1", [id]),
 };

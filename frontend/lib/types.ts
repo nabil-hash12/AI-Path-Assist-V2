@@ -66,6 +66,9 @@ export interface AnalysisResult {
   thumbnailUrl: string | null;
   engineVersion: string;
   createdAt: string;
+  // Original uploaded slide file name — present when fetched as part of a
+  // patient's full analysis list (GET /api/cases/:id/analyses).
+  fileName?: string;
 }
 
 export interface QueueJob {
@@ -83,7 +86,7 @@ export interface SystemUser {
   name: string;
   email: string;
   role: Role;
-  status: "Active" | "Invited" | "Deactivated";
+  status: "Active" | "Invited" | "Deactivated" | "Pending";
   lastLogin: string;
 }
 
@@ -93,6 +96,37 @@ export interface AuditEntry {
   action: string;
   target: string;
   time: string;
+}
+
+export type QueueAccessStatus = "Pending" | "Approved" | "Denied";
+
+export interface QueueAccessRequest {
+  id: string;
+  requestedById: string;
+  requesterName: string;
+  requesterEmail: string;
+  startDate: string;
+  endDate: string;
+  reason: string | null;
+  status: QueueAccessStatus;
+  reviewedById: string | null;
+  reviewerName: string | null;
+  decisionNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface QueueRecord {
+  id: string;
+  fileName: string;
+  framework: string;
+  progress: number;
+  status: "queued" | "active" | "done" | "failed";
+  eta: string;
+  caseId?: string | null;
+  imageId?: string | null;
+  errorMsg?: string | null;
+  updatedAt: string;
 }
 
 export interface ActivityItem {

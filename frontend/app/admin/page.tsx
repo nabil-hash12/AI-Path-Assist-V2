@@ -7,7 +7,7 @@ import Footer from "@/components/Footer";
 import MetricCard from "@/components/MetricCard";
 import Modal from "@/components/Modal";
 import { api, ApiError } from "@/lib/api";
-import { AuditEntry, Role, SystemUser } from "@/lib/types";
+import { AuditEntry, QueueAccessRequest, Role, SystemUser } from "@/lib/types";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Administrator",
@@ -17,14 +17,17 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default function AdminControlPage() {
-  const [tab, setTab] = useState<"users" | "audit" | "compliance">("users");
+  const [tab, setTab] = useState<"users" | "audit" | "compliance" | "queue-access">("users");
   const [users, setUsers] = useState<SystemUser[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [queueRequests, setQueueRequests] = useState<QueueAccessRequest[]>([]);
+  const [decidingRequestId, setDecidingRequestId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState({ name: "", email: "", password: "", role: "pathologist" as Role, institution: "" });
   const [inviteError, setInviteError] = useState("");
   const [inviting, setInviting] = useState(false);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
 
   const loadUsers = async () => {
     try {
@@ -44,8 +47,17 @@ export default function AdminControlPage() {
     }
   };
 
+  const loadQueueRequests = async () => {
+    try {
+      const res = await api.get<{ requests: QueueAccessRequest[] }>("/api/queue-access/requests");
+      setQueueRequests(res.requests);
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
-    Promise.all([loadUsers(), loadAudit()]).finally(() => setLoading(false));
+    Promise.all([loadUsers(), loadAudit(), loadQueueRequests()]).finally(() => setLoading(false));
   }, []);
 
   const changeRole = async (id: string, role: Role) => {
@@ -66,6 +78,60 @@ export default function AdminControlPage() {
       loadAudit();
     } catch {
       // no-op
+    }
+  };
+
+  const approveUser = async (u: SystemUser) => {
+    setDecidingId(u.id);
+    try {
+      const res = await api.post<{ user: SystemUser }>(`/api/users/${u.id}/approve`, {});
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? res.user : x)));
+      loadAudit();
+    } catch {
+      // no-op
+    } finally {
+      setDecidingId(null);
+    }
+  };
+
+  const rejectUser = async (u: SystemUser) => {
+    if (!confirm(`Reject the registration request from ${u.name} (${u.email})?`)) return;
+    setDecidingId(u.id);
+    try {
+      const res = await api.post<{ user: SystemUser }>(`/api/users/${u.id}/reject`, {});
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? res.user : x)));
+      loadAudit();
+    } catch {
+      // no-op
+    } finally {
+      setDecidingId(null);
+    }
+  };
+
+  const approveQueueRequest = async (r: QueueAccessRequest) => {
+    setDecidingRequestId(r.id);
+    try {
+      const res = await api.post<{ request: QueueAccessRequest }>(`/api/queue-access/requests/${r.id}/approve`, {});
+      setQueueRequests((prev) => prev.map((x) => (x.id === r.id ? res.request : x)));
+      loadAudit();
+    } catch {
+      // no-op
+    } finally {
+      setDecidingRequestId(null);
+    }
+  };
+
+  const denyQueueRequest = async (r: QueueAccessRequest) => {
+    const note = prompt(`Optional note for denying ${r.requesterName}'s request (${r.startDate} to ${r.endDate}):`) || undefined;
+    setDecidingRequestId(r.id);
+    try {
+      const res = await api.post<{ request: QueueAccessRequest }>(`/api/queue-access/requests/${r.id}/deny`, { note });
+      setQueueRequests((prev) => prev.map((x) => (x.id === r.id ? res.request : x)));
+      loadAudit();
+    } catch {
+      // no-op
+    } finally {
+      setDecidingRequestId(null);
     }
   };
 
@@ -99,12 +165,15 @@ export default function AdminControlPage() {
             <MetricCard label="Total Users" value={users.length} icon="group" footnote={`Across ${new Set(users.map((u) => u.role)).size} roles`} tone="primary" />
             <MetricCard label="Active Users" value={users.filter((u) => u.status === "Active").length} icon="wifi_tethering" footnote="Currently enabled" tone="secondary" />
             <MetricCard label="Pending Invites" value={users.filter((u) => u.status === "Invited").length} icon="mail" footnote="Awaiting first login" tone="neutral" />
+            <MetricCard label="Pending Approval" value={users.filter((u) => u.status === "Pending").length} icon="hourglass_top" footnote="Self-registered, needs review" tone="neutral" />
+            <MetricCard label="Queue Access Requests" value={queueRequests.filter((r) => r.status === "Pending").length} icon="lock_clock" footnote="Researcher requests awaiting review" tone="neutral" />
             <MetricCard label="AI Engine" value="v1.0" icon="verified_user" footnote="Heuristic CV pipeline" tone="secondary" />
           </div>
 
           <div className="flex gap-2 border-b border-outline-variant">
             {[
               { id: "users" as const, label: "User Management", icon: "manage_accounts" },
+              { id: "queue-access" as const, label: "Queue Access", icon: "lock_clock" },
               { id: "audit" as const, label: "Audit Log", icon: "history" },
               { id: "compliance" as const, label: "Compliance & Policy", icon: "policy" },
             ].map((t) => (
@@ -165,27 +234,119 @@ export default function AdminControlPage() {
                           </select>
                         </td>
                         <td className="p-md">
-                          <span className={`text-xs font-data-mono px-2 py-1 rounded ${u.status === "Active" ? "text-secondary bg-secondary/10" : "text-on-surface-variant bg-surface-variant"}`}>
+                          <span className={`text-xs font-data-mono px-2 py-1 rounded ${
+                            u.status === "Active"
+                              ? "text-secondary bg-secondary/10"
+                              : u.status === "Pending"
+                              ? "text-amber-600 bg-amber-500/10"
+                              : "text-on-surface-variant bg-surface-variant"
+                          }`}>
                             {u.status}
                           </span>
                         </td>
                         <td className="p-md text-on-surface-variant font-data-mono text-sm">{u.lastLogin ?? "Never"}</td>
                         <td className="p-md text-center">
-                          <button
-                            onClick={() => toggleStatus(u)}
-                            className="text-on-surface-variant hover:text-error transition-colors"
-                            title={u.status === "Deactivated" ? "Reactivate" : "Deactivate"}
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                              {u.status === "Deactivated" ? "person_check" : "person_remove"}
-                            </span>
-                          </button>
+                          {u.status === "Pending" ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => approveUser(u)}
+                                disabled={decidingId === u.id}
+                                className="flex items-center gap-1 text-xs text-secondary hover:text-secondary-fixed transition-colors disabled:opacity-50"
+                                title="Approve registration"
+                              >
+                                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>check_circle</span>
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => rejectUser(u)}
+                                disabled={decidingId === u.id}
+                                className="flex items-center gap-1 text-xs text-error hover:text-error transition-colors disabled:opacity-50"
+                                title="Reject registration"
+                              >
+                                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>cancel</span>
+                                Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => toggleStatus(u)}
+                              className="text-on-surface-variant hover:text-error transition-colors"
+                              title={u.status === "Deactivated" ? "Reactivate" : "Deactivate"}
+                            >
+                              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                                {u.status === "Deactivated" ? "person_check" : "person_remove"}
+                              </span>
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+            </section>
+          )}
+
+          {tab === "queue-access" && (
+            <section className="bg-surface-container-lowest rounded-xl border border-surface-container-highest overflow-hidden">
+              <div className="p-lg border-b border-outline-variant">
+                <h2 className="font-headline-sm">Researcher Queue Access Requests</h2>
+                <p className="text-on-surface-variant text-sm mt-1">
+                  Researchers request a bounded date range before they can see processing-queue data. Approve or deny each request below.
+                </p>
+              </div>
+              <ul className="flex flex-col">
+                {queueRequests.length === 0 && (
+                  <li className="p-md text-center text-on-surface-variant text-sm">No queue access requests yet.</li>
+                )}
+                {queueRequests.map((r) => (
+                  <li key={r.id} className="p-md border-b border-outline-variant last:border-0 flex flex-col sm:flex-row sm:items-center gap-sm sm:justify-between hover:bg-surface-container-low transition-colors">
+                    <div>
+                      <p className="text-on-surface font-medium">
+                        {r.requesterName} <span className="text-on-surface-variant font-data-mono text-sm">({r.requesterEmail})</span>
+                      </p>
+                      <p className="text-on-surface-variant text-sm font-data-mono">{r.startDate} → {r.endDate}</p>
+                      {r.reason && <p className="text-on-surface-variant text-sm mt-1">{r.reason}</p>}
+                      {r.status !== "Pending" && r.reviewerName && (
+                        <p className="text-outline text-xs mt-1">
+                          {r.status} by {r.reviewerName}{r.decisionNote ? ` — "${r.decisionNote}"` : ""}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-sm">
+                      <span className={`text-xs font-data-mono px-2 py-1 rounded ${
+                        r.status === "Approved"
+                          ? "text-secondary bg-secondary/10"
+                          : r.status === "Denied"
+                          ? "text-error bg-error/10"
+                          : "text-amber-600 bg-amber-500/10"
+                      }`}>
+                        {r.status}
+                      </span>
+                      {r.status === "Pending" && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => approveQueueRequest(r)}
+                            disabled={decidingRequestId === r.id}
+                            className="flex items-center gap-1 text-xs text-secondary hover:text-secondary-fixed transition-colors disabled:opacity-50"
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>check_circle</span>
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => denyQueueRequest(r)}
+                            disabled={decidingRequestId === r.id}
+                            className="flex items-center gap-1 text-xs text-error hover:text-error transition-colors disabled:opacity-50"
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>cancel</span>
+                            Deny
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 

@@ -9,6 +9,9 @@ import StatusChip from "@/components/StatusChip";
 import NewPatientModal from "@/components/NewPatientModal";
 import { usePatients } from "@/lib/patients-context";
 import { useAuth } from "@/lib/auth-context";
+import { api } from "@/lib/api";
+import { AnalysisResult } from "@/lib/types";
+import { buildCSV, downloadCSV, exportTimestamp, summarizeMetrics } from "@/lib/csv";
 
 const UPLOAD_STYLES: Record<string, string> = {
   Uploaded: "bg-primary/10 text-primary",
@@ -22,6 +25,7 @@ export default function PatientsPage() {
   const { patients } = usePatients();
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const isLabTech = user?.role === "lab_tech";
 
@@ -32,9 +36,69 @@ export default function PatientsPage() {
       c.specimenType.toLowerCase().includes(query.toLowerCase())
   );
 
+  // Export the currently filtered patient registry, joined with each
+  // patient's latest AI analysis, as a single CSV file.
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const analyses = await Promise.all(
+        filtered.map((c) =>
+          api
+            .get<{ analysis: AnalysisResult }>(`/api/cases/${c.id}/analysis`)
+            .then((res) => res.analysis)
+            .catch(() => null)
+        )
+      );
+
+      const headers = [
+        "Patient ID",
+        "Patient Name",
+        "Age",
+        "Gender",
+        "Specimen Type",
+        "Assigned Pathologist",
+        "Status",
+        "Diagnosis Status",
+        "Upload Status",
+        "Report Approved",
+        "Date Added",
+        "AI Engine Version",
+        "AI Analysis Date",
+        "AI Analysis Summary",
+        "Detected Biomarkers",
+      ];
+
+      const rows = filtered.map((c, i) => {
+        const a = analyses[i];
+        return [
+          c.patientId,
+          c.patientName,
+          c.age,
+          c.gender,
+          c.specimenType,
+          c.assignedTo ?? "Unassigned",
+          c.status,
+          c.diagnosisStatus,
+          c.uploadStatus,
+          c.reportApproved ? "Yes" : "No",
+          c.dateAdded,
+          a?.engineVersion ?? "",
+          a?.createdAt ?? "",
+          summarizeMetrics(a?.metrics),
+          a?.tags?.join("; ") ?? "",
+        ];
+      });
+
+      downloadCSV(`patient-registry_${exportTimestamp()}.csv`, buildCSV(headers, rows));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <AppShell allow={["admin", "pathologist", "lab_tech"]}>
-      <TopBar title="Patient Registry" showSearch={false} showExport={!isLabTech} />
+      <TopBar title="Patient Registry" showSearch={false} showExport={!isLabTech} onExport={handleExport} exporting={exporting} />
       <main className="flex-grow p-xl overflow-y-auto">
         <div className="max-w-[1400px] mx-auto flex flex-col gap-lg">
           <div className="flex items-center justify-between gap-md flex-wrap">

@@ -9,6 +9,7 @@ const images = require("../models/images");
 const analysisModel = require("../models/analysis");
 const queue = require("../models/queue");
 const misc = require("../models/misc");
+const queueAccess = require("../models/queueAccess");
 const { enqueueAnalysis } = require("../queue/analysisQueue");
 const { requireAuth, requireRole } = require("../middleware/auth");
 
@@ -41,7 +42,15 @@ const upload = multer({
 
 router.get("/", requireAuth, async (req, res) => {
   let list;
-  if (req.user.role === "pathologist") {
+  if (req.user.role === "researcher") {
+    // Researchers only see cases within date ranges an admin has explicitly
+    // approved via a queue-access request — nothing is visible by default.
+    const myRequests = await queueAccess.listForUser(req.user.id);
+    const approvedRanges = myRequests
+      .filter((r) => r.status === "Approved")
+      .map((r) => ({ startDate: r.startDate, endDate: r.endDate }));
+    list = await casesModel.listByDateRanges(approvedRanges);
+  } else if (req.user.role === "pathologist") {
     // Pathologists see cases assigned to them by name (legacy free-text
     // assignment) OR all cases if none match, so the UI still has data
     // to explore during a demo/eval session.
@@ -74,6 +83,15 @@ router.post("/", requireAuth, requireRole("admin", "lab_tech"), async (req, res)
 router.get("/:id", requireAuth, async (req, res) => {
   const c = await casesModel.findByCaseCode(req.params.id);
   if (!c) return res.status(404).json({ error: "Case not found." });
+
+  if (req.user.role === "researcher") {
+    const myRequests = await queueAccess.listForUser(req.user.id);
+    const approvedRanges = myRequests.filter((r) => r.status === "Approved");
+    const caseDate = c.dateAdded.slice(0, 10);
+    const inRange = approvedRanges.some((r) => caseDate >= r.startDate && caseDate <= r.endDate);
+    if (!inRange) return res.status(403).json({ error: "This case is outside your approved queue-access date range." });
+  }
+
   res.json({ case: c });
 });
 
@@ -185,6 +203,16 @@ router.get("/:id/analysis", requireAuth, async (req, res) => {
   const result = await analysisModel.findLatestForCase(caseRow.id);
   if (!result) return res.status(404).json({ error: "No analysis available yet for this case." });
   res.json({ analysis: result });
+});
+
+// All analysis runs for this patient/case (one per analyzed slide), most
+// recent first — lets the viewer list and switch between every analysis
+// instead of only ever showing the latest.
+router.get("/:id/analyses", requireAuth, async (req, res) => {
+  const caseRow = await casesModel.findRawByCaseCode(req.params.id);
+  if (!caseRow) return res.status(404).json({ error: "Case not found." });
+  const results = await analysisModel.listForCase(caseRow.id);
+  res.json({ analyses: results });
 });
 
 router.get("/:id/images", requireAuth, async (req, res) => {

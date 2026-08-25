@@ -28,6 +28,7 @@ export default function RegisterPage() {
   const [registeredEmail, setRegisteredEmail] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [approvalPending, setApprovalPending] = useState(false);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startCooldown = () => {
@@ -76,11 +77,20 @@ export default function RegisterPage() {
     setError("");
     setVerifying(true);
     try {
-      const res = await api.post<{ token: string; user: import("@/lib/types").SessionUser }>(
-        "/api/auth/verify-otp",
-        { email: registeredEmail, otp }
-      );
-      applySession(res.token, res.user);
+      const res = await api.post<{
+        token?: string;
+        user?: import("@/lib/types").SessionUser;
+        pending?: boolean;
+        approvalPending?: boolean;
+        message?: string;
+      }>("/api/auth/verify-otp", { email: registeredEmail, otp });
+      if (res.approvalPending) {
+        // Email confirmed, but the account still needs admin sign-off —
+        // don't log the user in, show the "awaiting approval" screen.
+        setApprovalPending(true);
+      } else if (res.token && res.user) {
+        applySession(res.token, res.user);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed.");
     } finally {
@@ -111,7 +121,25 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center font-body-md p-margin pb-16">
-      {otpMode ? (
+      {approvalPending ? (
+        <main className="w-full max-w-md bg-surface-container rounded-xl p-xl shadow-2xl text-center">
+          <div className="w-16 h-16 mx-auto rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary mb-md">
+            <span className="material-symbols-outlined" style={{ fontSize: 32 }}>hourglass_top</span>
+          </div>
+          <h2 className="font-headline-md mb-2">Awaiting Admin Approval</h2>
+          <p className="font-body-md text-on-surface-variant mb-lg">
+            Your email is verified and your registration has been sent to your institution&apos;s administrator.
+            You&apos;ll receive an email at <strong>{registeredEmail}</strong> as soon as your account is approved,
+            and you&apos;ll be able to sign in from that point on.
+          </p>
+          <Link
+            href="/login"
+            className="w-full inline-flex justify-center items-center gap-sm bg-primary text-on-primary rounded-DEFAULT py-sm font-headline-sm hover:bg-primary-fixed transition-colors"
+          >
+            Return to Login
+          </Link>
+        </main>
+      ) : otpMode ? (
         <main className="w-full max-w-md bg-surface-container rounded-xl p-xl shadow-2xl">
           <div className="flex flex-col items-center text-center mb-lg">
             <div className="w-16 h-16 rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary mb-md">
@@ -145,7 +173,7 @@ export default function RegisterPage() {
             disabled={verifying}
             className="w-full bg-primary text-on-primary rounded-DEFAULT py-sm font-headline-sm hover:bg-primary-fixed transition-colors disabled:opacity-60 flex items-center justify-center gap-2 mb-sm"
           >
-            {verifying ? "Verifying…" : "Verify & Sign In"}
+            {verifying ? "Verifying…" : "Verify Email"}
             {!verifying && <span className="material-symbols-outlined" style={{ fontSize: 18 }}>check_circle</span>}
           </button>
           <div className="flex justify-between text-sm mt-sm">

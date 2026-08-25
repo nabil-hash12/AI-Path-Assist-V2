@@ -8,10 +8,19 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin', 'pathologist', 'lab_tech', 'researcher')),
   institution TEXT NOT NULL DEFAULT 'General Hospital Pathology Dept',
-  status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Invited', 'Deactivated')),
+  status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Invited', 'Deactivated', 'Pending')),
   last_login TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Widen the status CHECK constraint to include 'Pending' on databases that
+-- were created before self-registration required admin approval. Safe to
+-- re-run: drops and recreates the (default-named) constraint idempotently.
+DO $$
+BEGIN
+  ALTER TABLE users DROP CONSTRAINT IF EXISTS users_status_check;
+  ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('Active', 'Invited', 'Deactivated', 'Pending'));
+END $$;
 
 CREATE TABLE IF NOT EXISTS patient_cases (
   id TEXT PRIMARY KEY,
@@ -110,6 +119,25 @@ CREATE TABLE IF NOT EXISTS audit_entries (
   target TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Researcher requests to view processing-queue data for a bounded date
+-- range. Nothing is visible to the researcher until an admin approves the
+-- specific request; approval only grants visibility for that date range.
+CREATE TABLE IF NOT EXISTS queue_access_requests (
+  id TEXT PRIMARY KEY,
+  requested_by_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Denied')),
+  reviewed_by_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  decision_note TEXT,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (end_date >= start_date)
+);
+CREATE INDEX IF NOT EXISTS idx_queue_access_requester ON queue_access_requests(requested_by_id);
+CREATE INDEX IF NOT EXISTS idx_queue_access_status ON queue_access_requests(status);
 
 CREATE INDEX IF NOT EXISTS idx_cases_assigned ON patient_cases(assigned_to_id);
 CREATE INDEX IF NOT EXISTS idx_notes_case ON case_notes(case_id);

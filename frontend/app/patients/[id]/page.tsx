@@ -8,8 +8,9 @@ import Footer from "@/components/Footer";
 import StatusChip from "@/components/StatusChip";
 import { usePatients } from "@/lib/patients-context";
 import { useAuth } from "@/lib/auth-context";
-import { Gender, UploadStatus, BiomarkerMetric } from "@/lib/types";
+import { AnalysisResult, Gender, UploadStatus, BiomarkerMetric } from "@/lib/types";
 import { api, ApiError } from "@/lib/api";
+import { buildCSV, downloadCSV, exportTimestamp } from "@/lib/csv";
 
 const UPLOAD_STEPS: UploadStatus[] = ["Uploaded", "Processing", "Processed"];
 
@@ -65,6 +66,85 @@ export default function PatientDetailPage() {
     );
   }
 
+  const [exporting, setExporting] = useState(false);
+
+  // Export this patient's info joined with every AI analysis run against
+  // them (one row per detected biomarker) as a single CSV file.
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const res = await api
+        .get<{ analyses: AnalysisResult[] }>(`/api/cases/${c.id}/analyses`)
+        .catch(() => ({ analyses: [] as AnalysisResult[] }));
+
+      const headers = [
+        "Patient ID",
+        "Patient Name",
+        "Age",
+        "Gender",
+        "Specimen Type",
+        "Assigned Pathologist",
+        "Status",
+        "Diagnosis Status",
+        "Date Added",
+        "Analysis ID",
+        "Analysis Date",
+        "AI Engine Version",
+        "Slide File Name",
+        "Biomarker",
+        "Value",
+        "Unit",
+        "Severity",
+        "Confidence (%)",
+        "Tag",
+      ];
+
+      const patientCols = [
+        c.patientId,
+        c.patientName,
+        c.age,
+        c.gender,
+        c.specimenType,
+        c.assignedTo ?? "Unassigned",
+        c.status,
+        c.diagnosisStatus,
+        c.dateAdded,
+      ];
+
+      const rows: (string | number)[][] = [];
+      if (res.analyses.length === 0) {
+        rows.push([...patientCols, "", "", "", "", "", "", "", "", ""]);
+      } else {
+        for (const a of res.analyses) {
+          if (a.metrics.length === 0) {
+            rows.push([...patientCols, a.id, a.createdAt, a.engineVersion, a.fileName ?? "", "", "", "", "", "", ""]);
+          } else {
+            for (const m of a.metrics) {
+              rows.push([
+                ...patientCols,
+                a.id,
+                a.createdAt,
+                a.engineVersion,
+                a.fileName ?? "",
+                m.label,
+                m.value,
+                m.unit ?? "",
+                m.severity,
+                m.confidence ?? "",
+                m.tag,
+              ]);
+            }
+          }
+        }
+      }
+
+      downloadCSV(`patient-${c.patientId}_${exportTimestamp()}.csv`, buildCSV(headers, rows));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const saveBasicInfo = () => {
     const ageNum = Number(basicForm.age);
     updateBasicInfo(c.id, {
@@ -103,7 +183,7 @@ export default function PatientDetailPage() {
 
   return (
     <AppShell allow={["admin", "pathologist", "lab_tech"]}>
-      <TopBar title={`Patient ${c.patientId}`} showExport={!isLabTech} />
+      <TopBar title={`Patient ${c.patientId}`} showExport={!isLabTech} onExport={handleExport} exporting={exporting} />
       <main className="flex-grow p-xl overflow-y-auto">
         <div className="max-w-[1000px] mx-auto flex flex-col gap-lg">
           <button onClick={() => router.push("/patients")} className="flex items-center gap-1 text-sm text-on-surface-variant hover:text-on-surface w-fit">

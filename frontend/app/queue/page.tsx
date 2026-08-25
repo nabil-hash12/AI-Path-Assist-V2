@@ -9,8 +9,9 @@ import NewPatientModal from "@/components/NewPatientModal";
 import { usePatients } from "@/lib/patients-context";
 import { useSocket } from "@/lib/socket-context";
 import { api, ApiError } from "@/lib/api";
-import { QueueJob } from "@/lib/types";
+import { AnalysisResult, QueueJob } from "@/lib/types";
 import PatientSelect from "@/components/PatientSelect";
+import { buildCSV, downloadCSV, exportTimestamp, summarizeMetrics } from "@/lib/csv";
 
 interface PendingFile {
   file: File;
@@ -36,6 +37,7 @@ export default function QueuePage() {
   const [newPatientOpen, setNewPatientOpen] = useState(false);
   const [activeJobs, setActiveJobs] = useState<QueueJob[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [exporting, setExporting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadQueue = useCallback(async () => {
@@ -114,9 +116,65 @@ export default function QueuePage() {
     }
   };
 
+  // Export every patient currently in the registry, joined with each
+  // patient's latest AI analysis, as a single CSV file.
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const analyses = await Promise.all(
+        patients.map((c) =>
+          api
+            .get<{ analysis: AnalysisResult }>(`/api/cases/${c.id}/analysis`)
+            .then((res) => res.analysis)
+            .catch(() => null)
+        )
+      );
+
+      const headers = [
+        "Patient ID",
+        "Patient Name",
+        "Age",
+        "Gender",
+        "Specimen Type",
+        "Assigned Pathologist",
+        "Status",
+        "Upload Status",
+        "Date Added",
+        "AI Engine Version",
+        "AI Analysis Date",
+        "AI Analysis Summary",
+        "Detected Biomarkers",
+      ];
+
+      const rows = patients.map((c, i) => {
+        const a = analyses[i];
+        return [
+          c.patientId,
+          c.patientName,
+          c.age,
+          c.gender,
+          c.specimenType,
+          c.assignedTo ?? "Unassigned",
+          c.status,
+          c.uploadStatus,
+          c.dateAdded,
+          a?.engineVersion ?? "",
+          a?.createdAt ?? "",
+          summarizeMetrics(a?.metrics),
+          a?.tags?.join("; ") ?? "",
+        ];
+      });
+
+      downloadCSV(`batch-queue-patients_${exportTimestamp()}.csv`, buildCSV(headers, rows));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <AppShell allow={["admin", "pathologist", "lab_tech"]}>
-      <TopBar title="Batch Processing Queue" />
+      <TopBar title="Batch Processing Queue" onExport={handleExport} exporting={exporting} />
       <main className="flex-grow p-xl overflow-y-auto">
         <div className="grid grid-cols-12 gap-lg max-w-[1600px] mx-auto">
           <div className="col-span-12 lg:col-span-8 flex flex-col gap-lg">

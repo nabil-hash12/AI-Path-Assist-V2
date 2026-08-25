@@ -1,5 +1,5 @@
 const { v4: uuid } = require("uuid");
-const { get, run, nowIso } = require("../lib/sqlHelpers");
+const { all, get, run, nowIso } = require("../lib/sqlHelpers");
 
 // NOTE: metrics/boxes/tags are JS arrays. node-postgres does NOT auto-serialize
 // arrays to JSON for jsonb columns (it converts them to Postgres array literal
@@ -19,6 +19,9 @@ function serialize(row) {
     thumbnailUrl: row.thumbnail_path ? `/files/${row.thumbnail_path}` : null,
     engineVersion: row.engine_version,
     createdAt: row.created_at,
+    // Present only when the row was fetched via a query that joins
+    // slide_images (e.g. listForCase) — the original uploaded file name.
+    fileName: row.file_name !== undefined ? row.file_name : undefined,
   };
 }
 
@@ -47,4 +50,29 @@ async function findLatestForCase(caseId) {
   return serialize(await get("SELECT * FROM analysis_results WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1", [caseId]));
 }
 
-module.exports = { save, findByImageId, findLatestForCase, serialize };
+/**
+ * A specific analysis row, scoped to a case so a caller-supplied id can't be
+ * used to pull results belonging to a different case.
+ */
+async function findByIdForCase(id, caseId) {
+  return serialize(await get("SELECT * FROM analysis_results WHERE id = $1 AND case_id = $2", [id, caseId]));
+}
+
+/**
+ * All analysis results for a case (one per analyzed slide/image), most
+ * recent first, so the UI can let the user browse every analysis run
+ * against a patient instead of only ever seeing the latest one.
+ */
+async function listForCase(caseId) {
+  const rows = await all(
+    `SELECT ar.*, si.file_name
+     FROM analysis_results ar
+     LEFT JOIN slide_images si ON si.id = ar.image_id
+     WHERE ar.case_id = $1
+     ORDER BY ar.created_at DESC`,
+    [caseId]
+  );
+  return rows.map(serialize);
+}
+
+module.exports = { save, findByImageId, findLatestForCase, findByIdForCase, listForCase, serialize };
