@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { Role } from "@/lib/types";
 import { api } from "@/lib/api";
+import { ThemeToggleIcon } from "@/components/ThemeToggle";
 
 const STEPS = ["Identity", "Credentials", "Security"];
 
@@ -121,6 +122,7 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center font-body-md p-margin pb-16">
+      <ThemeToggleIcon className="!fixed top-4 right-4 z-20 bg-surface-container-lowest border border-outline-variant shadow-sm" />
       {approvalPending ? (
         <main className="w-full max-w-md bg-surface-container rounded-xl p-xl shadow-2xl text-center">
           <div className="w-16 h-16 mx-auto rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary mb-md">

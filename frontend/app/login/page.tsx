@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { SessionUser } from "@/lib/types";
 import { api, ApiError } from "@/lib/api";
+import { ThemeToggleIcon } from "@/components/ThemeToggle";
 
 export default function LoginPage() {
   const { applySession } = useAuth();
@@ -134,10 +135,13 @@ export default function LoginPage() {
           </div>
           <span className="font-headline-sm text-on-background tracking-tight">AI-Path Assist</span>
         </div>
-        <a className="flex items-center gap-2 text-on-surface-variant hover:text-on-surface transition-colors text-sm font-medium" href="/support">
-          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>help</span>
-          <span className="hidden sm:inline">Technical Support</span>
-        </a>
+        <div className="flex items-center gap-4">
+          <a className="flex items-center gap-2 text-on-surface-variant hover:text-on-surface transition-colors text-sm font-medium" href="/support">
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>help</span>
+            <span className="hidden sm:inline">Technical Support</span>
+          </a>
+          <ThemeToggleIcon />
+        </div>
       </header>
 
       <main className="w-full max-w-md mt-16">

@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useSocket } from "@/lib/socket-context";
 import { api, ApiError, fileUrl } from "@/lib/api";
 import { AnalysisResult, QueueJob } from "@/lib/types";
+import { ThemeToggleIcon } from "@/components/ThemeToggle";
 
 export default function AnalysisViewerPage() {
   const params = useParams<{ caseId: string }>();
@@ -185,6 +186,7 @@ export default function AnalysisViewerPage() {
             </span>
           </div>
           <div className="flex items-center gap-lg">
+            <ThemeToggleIcon />
             {analysis && (
               <a
                 href={fileUrl(analysis.slideUrl)}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/auth-context";
+import { ThemeToggleIcon } from "@/components/ThemeToggle";
 
 export default function TopBar({
   title,
@@ -42,6 +43,7 @@ export default function TopBar({
           </div>
         )}
         <div className="flex items-center gap-sm">
+          <ThemeToggleIcon />
           <button className="p-xs text-on-surface-variant hover:text-primary transition-all rounded-DEFAULT hover:bg-surface-container-high" title="Share">
             <span className="material-symbols-outlined">ios_share</span>
           </button>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
+import { ThemeToggleIcon } from "@/components/ThemeToggle";
 
 const CAPABILITIES = [
   {
@@ -67,6 +68,7 @@ export default function LandingPage() {
               Login
             </Link>
           </motion.div>
+          <ThemeToggleIcon />
         </div>
       </motion.header>
 

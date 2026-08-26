@@ -5,6 +5,7 @@ import AppShell from "@/components/AppShell";
 import TopBar from "@/components/TopBar";
 import Footer from "@/components/Footer";
 import Toggle from "@/components/Toggle";
+import { ThemeToggleSegmented } from "@/components/ThemeToggle";
 import { useAuth } from "@/lib/auth-context";
 
 export default function SettingsPage() {
@@ -37,6 +38,17 @@ export default function SettingsPage() {
                 <span className="font-label-caps text-on-surface-variant">Institution</span>
                 <span className="text-on-surface font-medium">{user?.institution}</span>
               </div>
+            </div>
+          </section>
+
+          <section className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-lg flex flex-col gap-md">
+            <h2 className="font-headline-sm">Appearance</h2>
+            <div className="flex items-center justify-between flex-wrap gap-md">
+              <div>
+                <p className="text-on-surface font-medium">Theme</p>
+                <p className="text-on-surface-variant text-sm">Choose how AI-Path Assist looks on this device.</p>
+              </div>
+              <ThemeToggleSegmented />
             </div>
           </section>
 
