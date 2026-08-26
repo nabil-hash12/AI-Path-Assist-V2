@@ -35,7 +35,10 @@ router.post("/:caseId/generate", requireAuth, requireRole("admin", "pathologist"
   const caseRow = await casesModel.findRawByCaseCode(req.params.caseId);
   if (!caseRow) return res.status(404).json({ error: "Case not found." });
   const caseData = await casesModel.findByCaseCode(req.params.caseId);
-
+  // Report the analysis the pathologist actually had open in the viewer
+  // (what the "Generate Report" modal previewed), not just whichever
+  // analysis happens to be newest for the case. Falls back to the latest
+  // when no specific analysis was selected (e.g. a case with only one).
   const { analysisId } = req.body || {};
   const analysis = analysisId
     ? (await analysisModel.findByIdForCase(analysisId, caseRow.id)) || (await analysisModel.findLatestForCase(caseRow.id))
@@ -49,10 +52,7 @@ router.post("/:caseId/generate", requireAuth, requireRole("admin", "pathologist"
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
-  // Fix 1: Properly align header title and subtitle baseline
-  doc.fontSize(20).fillColor("#1a2b4c").text("AI-Path Assist", 50, 50, { continued: true });
-  doc.fontSize(10).fillColor("#666").text("  Clinical Pathology Intelligence Platform", { baseline: "bottom" });
-  
+  doc.fontSize(20).fillColor("#1a2b4c").text("AI-Path Assist", { continued: true }).fillColor("#666").fontSize(10).text("  Clinical Pathology Intelligence Platform", { align: "left" });
   doc.moveDown(0.3);
   doc.strokeColor("#1a2b4c").lineWidth(2).moveTo(50, doc.y).lineTo(545, doc.y).stroke();
   doc.moveDown(1);
@@ -85,16 +85,8 @@ router.post("/:caseId/generate", requireAuth, requireRole("admin", "pathologist"
       if (fs.existsSync(slideAbs)) {
         doc.moveDown(0.5);
         doc.fontSize(10).fillColor("#000").text("Focal Point Image:");
-        doc.moveDown(0.3);
-        
-        // Fix 2: Calculate image height using doc.openImage and update doc.y
         try {
-          const imgWidth = 260;
-          const img = doc.openImage(slideAbs);
-          const imgHeight = (img.height / img.width) * imgWidth;
-          
-          doc.image(img, { width: imgWidth });
-          doc.y += imgHeight; // Advance y cursor past the image height
+          doc.image(slideAbs, { width: 260 });
         } catch (e) {
           // ignore image embed issues
         }
@@ -107,7 +99,7 @@ router.post("/:caseId/generate", requireAuth, requireRole("admin", "pathologist"
 
   doc.fontSize(12).fillColor("#000").text("Clinical Notes", { underline: true });
   doc.moveDown(0.3);
-  if (caseData.notes && caseData.notes.length) {
+  if (caseData.notes.length) {
     caseData.notes.forEach((n) => {
       doc.fontSize(10).fillColor("#333").text(`${n.time} — ${n.author}: ${n.text}`);
     });

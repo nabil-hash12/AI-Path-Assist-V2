@@ -13,14 +13,14 @@ export type DiagnosisStatus = "Pending" | "Reviewed" | "Completed";
 export type Gender = "Male" | "Female" | "Other";
 
 export interface CaseNote {
-  id: SessionUser;
+  id: string;
   author: string;
   text: string;
   time: string;
 }
 
 export interface PatientCase {
-  id: SessionUser ;
+  id: string;
   patientId: string;
   patientName: string;
   age: number;
@@ -55,7 +55,7 @@ export interface BoundingBox {
 }
 
 export interface AnalysisResult {
-  id: SessionUser ;
+  id: string;
   imageId: string;
   caseId: string;
   metrics: BiomarkerMetric[];
@@ -72,7 +72,7 @@ export interface AnalysisResult {
 }
 
 export interface QueueJob {
-  id: SessionUser ;
+  id: string;
   fileName: string;
   framework: string;
   progress: number;
@@ -82,7 +82,7 @@ export interface QueueJob {
 }
 
 export interface SystemUser {
-  id: SessionUser ;
+  id: string;
   name: string;
   email: string;
   role: Role;
@@ -91,7 +91,7 @@ export interface SystemUser {
 }
 
 export interface AuditEntry {
-  id: SessionUser ;
+  id: string;
   actor: string;
   action: string;
   target: string;
@@ -101,7 +101,7 @@ export interface AuditEntry {
 export type QueueAccessStatus = "Pending" | "Approved" | "Denied";
 
 export interface QueueAccessRequest {
-  id: SessionUser ;
+  id: string;
   requestedById: string;
   requesterName: string;
   requesterEmail: string;
@@ -117,7 +117,7 @@ export interface QueueAccessRequest {
 }
 
 export interface QueueRecord {
-  id: SessionUser ;
+  id: string;
   fileName: string;
   framework: string;
   progress: number;
@@ -130,7 +130,7 @@ export interface QueueRecord {
 }
 
 export interface ActivityItem {
-  id: SessionUser ;
+  id: string;
   title: string;
   detail: string;
   time: string;
